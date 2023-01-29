@@ -40,7 +40,9 @@ p<-ggplot(ic50.df2, aes(x=sample_id, y=ic50, fill=Drug)) +
   # Add Y-label
   ylab("IC-50 (nM)") +
   scale_fill_manual(values=c('#E64B35FF','#00A087FF')) +
-  geom_bar(stat="identity", position=position_dodge())
+  geom_bar(stat="identity", position=position_dodge()) +
+  # Add annotation for horizontal line
+  annotate("text", x=2.23, y=97, label=">100", size=5, color="black")
   # Add pairwise comparisons p-value
   #stat_compare_means(comparisons = my_comparisons) + 
   
