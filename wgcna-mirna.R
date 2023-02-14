@@ -18,10 +18,10 @@ wgcna_tiff <- file.path(output_dir, "wgcna.tiff")
 
 # Load datasets
 mirna_clusters <- paste0(data_dir, "/", "pbta_clusters_mirna.csv")
-mirna_meta <- paste0(data_dir, "/", "pbta_meta_mirna.rds")
+#mirna_meta <- paste0(data_dir, "/", "pbta_meta_mirna.rds")
 mirna_counts <- paste0(data_dir, "/", "pbta_raw_counts_mirna.rds")
 clusters <- read.csv(mirna_clusters)
-meta <- readRDS(mirna_meta)
+#meta <- readRDS(mirna_meta)
 counts <- readRDS(mirna_counts)
 
 
