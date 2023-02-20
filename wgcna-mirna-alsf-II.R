@@ -1,4 +1,3 @@
-# ALSF guide Trial #2
 # Script to perform weighted correlation gene co-expression network analysis (WGCNA)
 # Author: Shehbeel Arif
 # Children's Hospital of Philadelphia
@@ -118,10 +117,10 @@ dds <- DESeqDataSetFromMatrix(countData = counts.subset,
                               colData = clusters,
                               design = ~1) # not specifying the model
 
-# Remove all genes with counts <15 in more than 75% of samples (0.75 * 238 samples = 178.5)
+# Remove all genes with counts <15 in more than 75% of samples (0.75 * 237 samples = 177.5)
 ## Suggested by WGCNA on RNAseq FAQ
-dds75 <- dds[rowSums(counts(dds) >= 15) > 179]
-nrow(dds75) # 598 genes left
+dds75 <- dds[rowSums(counts(dds) >= 15) > 178]
+nrow(dds75) # 602 genes left
 
 # Perform variance stabilization
 #dds_norm <- vst(dds75) # Did not work b/c it is less than 'nsub' rows
@@ -131,6 +130,27 @@ dds_norm <- varianceStabilizingTransformation(dds75)
 # Retrieve the normalized data from the `DESeqDataSet`
 normalized_counts <- assay(dds_norm) %>%
   t() # Transpose this data
+
+### Plot the normalized expressions
+norm_counts_df <- data.frame(t(normalized_counts)) %>%
+  mutate(
+    Gene_id = row.names(t(normalized_counts))
+  ) %>%
+  pivot_longer(-Gene_id)
+
+norm_counts_df %>% ggplot(., aes(x = name, y = value)) +
+  geom_violin() +
+  geom_point() +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text( angle = 90)
+  ) +
+  ylim(0, NA) +
+  labs(
+    title = "VST Normalized miRNA Expression",
+    x = "Sample ID",
+    y = "VST Normalized Expression"
+  )
 
 ################################################################################
 ### WGCNA ANALYSIS ###
@@ -151,7 +171,7 @@ sft <- pickSoftThreshold(normalized_counts,
 
 ## Make plots of the soft-thresholds
 par(mfrow = c(1,2));
-cex1 = 0.9;
+cex1 = 0.8;
 
 plot(sft$fitIndices[, 1],
      -sign(sft$fitIndices[, 3]) * sft$fitIndices[, 2],
@@ -188,9 +208,10 @@ bwnet <- blockwiseModules(normalized_counts,
                           TOMType = "signed", # topological overlap matrix
                           power = chosen_power, # soft threshold for network construction
                           numericLabels = TRUE, # Let's use numbers instead of colors for module labels
-                          randomSeed = 1234, # there's some randomness associated with this calculation
+                          randomSeed = 1234 # there's some randomness associated with this calculation
                           # so we should set a seed
 )
+
 
 # Return cor function to original namespace
 cor <- temp_cor
@@ -200,6 +221,10 @@ module_eigengenes <- bwnet$MEs
 # Print out a preview
 head(module_eigengenes)
 
+# Look at number of genes per Modules
+table(bwnet$colors)
+# 0   1   2   3 
+# 330 185  55  32 
 
 ################################################################################
 # WGCNA MODULE DENDROGRAM
@@ -237,6 +262,14 @@ fit <- limma::eBayes(fit)
 stats_df <- limma::topTable(fit, number = ncol(module_eigengenes)) %>%
   tibble::rownames_to_column("module")
 
+# Save the Limma stats data to a CSV file
+readr::write_csv(stats_df,
+                 file = file.path("results", "wgcna-mirna-cluster-limma.csv")
+)
+
+################################################################################
+# CORRELATION BETWEEN MODULES AND CLUSTERS
+
 # As a sanity check, let’s use ggplot to see what module 3’s eigengene looks like between treatment groups.
 module_df <- module_eigengenes %>%
   tibble::rownames_to_column("Sample_ID") %>%
@@ -246,8 +279,10 @@ module_df <- module_eigengenes %>%
                     by = c("Sample_ID" = "Sample_ID")
   )
 
-################################################################################
-# CORRELATION BETWEEN MODULES AND CLUSTERS
+# Save the module eigengenes Sample_ID dataframe
+readr::write_csv(stats_df,
+                 file = file.path("results", "wgcna-mirna-sample_id-eigengenes.csv")
+)
 
 # Reorder modules so similar modules are next to each other
 module_order <- names(module_df)
@@ -417,7 +452,44 @@ png(file.path("results", "PBTA_mirna_module_3_heatmap.png"))
 mod_3_heatmap
 dev.off()
 
-## For comparison look at other
-mod_0_heatmap <- make_module_heatmap(module_name = "ME0")
+## For comparison look at other modules
+mod_2_heatmap <- make_module_heatmap(module_name = "ME2")
 # Print out the plot
-mod_0_heatmap
+mod_2_heatmap
+################################################################################
+# WHAT GENES ARE PART OF MODULE 3
+gene_module_key %>% filter(module == "ME3")
+
+################################################################################
+## EXAMINE EXPRESSION PROFILES
+# pick out a few modules of interest here
+modules_of_interest <- c("grey", "turquoise", "blue", "yellow", "brown")
+
+# Pull out list of genes in that module
+submod <- module_df %>%
+  subset(colors %in% modules_of_interest)
+
+row.names(module_df) <- module_df$gene_id
+
+subexpr = norm_counts[submod$gene_id,]
+
+submod_df = data.frame(subexpr) %>%
+  mutate(
+    gene_id = row.names(.)
+  ) %>%
+  pivot_longer(-gene_id) %>%
+  mutate(
+    module = module_df[gene_id,]$colors
+  )
+
+submod_df %>% ggplot(., aes(x=name, y=value, group=gene_id)) +
+  geom_line(aes(color = module),
+            alpha = 0.2) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 90)
+  ) +
+  facet_grid(rows = vars(module)) +
+  labs(x = "Sample_ID",
+       y = "normalized expression") #+
+#scale_color_manual(values=c("blue", "brown", "grey", "turquoise",  "yellow"))
