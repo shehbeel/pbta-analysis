@@ -1,5 +1,6 @@
 # Script to perform weighted correlation gene co-expression network analysis (WGCNA)
 # Author: Shehbeel Arif
+# Code adapted from ALSF (https://alexslemonade.github.io/refinebio-examples/04-advanced-topics/network-analysis_rnaseq_01_wgcna.html#4_Identifying_co-expression_gene_modules_with_WGCNA_-_RNA-seq)
 # Children's Hospital of Philadelphia
 
 # Load libraries
@@ -476,10 +477,12 @@ mod_3_heatmap
 ################################################################################
 ## FINDING DRIVER GENES
 chooseTopHubInEachModule(normalized_counts,
-                         colorh, 
-                         omitColors = "grey", 
+                         gene_module_key$module, 
                          power = chosen_power, 
                          type = "signed")
+
+# ME0           ME1           ME2           ME3 
+# "miR-32-5p" "miR-4695-5p"  "miR-154-5p"   "miR-17-5p" 
 
 
 ################################################################################
@@ -518,4 +521,66 @@ submod_df %>% ggplot(., aes(x=name, y=value, group=gene)) +
   labs(x = "Sample_ID",
        y = "normalized expression") +
   scale_color_manual(values=c("grey", "turquoise", "blue", "brown"))
+
+################################################################################
+## GENERATE NETWORKS
+# The network file can be generated for Cytoscape or as an edge/vertices file.
+
+genes_of_interest <- module_df %>%
+  subset(colors %in% modules_of_interest)
+
+expr_of_interest <- norm_counts[genes_of_interest$gene_id,]
+
+
+# Only recalculate TOM for modules of interest (faster, altho there's some online discussion if this will be slightly off)
+TOM <- TOMsimilarityFromExpr(t(expr_of_interest),
+                             power = picked_power)
+
+# Add gene names to row and columns
+row.names(TOM) <- row.names(expr_of_interest)
+colnames(TOM) <- row.names(expr_of_interest)
+
+edge_list <- data.frame(TOM) %>%
+  mutate(gene1 = row.names(.)) %>%
+  pivot_longer(-gene1) %>%
+  dplyr::rename(gene2 = name, correlation = value) %>%
+  mutate(gene2 = gsub("*\\.","-",as.character(gene2))) %>%
+  unique() %>%
+  subset(!(gene1==gene2)) %>%
+  mutate(
+    module1 = module_df[gene1,]$colors,
+    module2 = module_df[gene2,]$colors
+  )
+
+
+# Select rows if gene1 and gen2 are from same module
+edge_list[edge_list$module1 == edge_list$module2,]
+# Select rows if gene1 and gen2 have a correlation >0.1
+new_edge_list <- edge_list[edge_list$correlation > 0.5,]
+
+a <- new_edge_list$gene1
+b <- new_edge_list$gene2
+idx <- order(c(seq_along(a), seq_along(b)))
+edges <- c(a,b)[idx]
+
+# Export Network file to be read into Cytoscape, VisANT, etc
+write_delim(edge_list,
+            file = "edgelist.tsv",
+            delim = "\t")
+
+write_delim(as.data.frame(TOM),
+            file = "TOM_edgelist.tsv",
+            delim = "\t")
+
+read.csv("edgelist.tsv", sep="\t")
+
+# Creating a Network graph using igraph
+# Tutorial: https://kateto.net/networks-r-igraph
+library(igraph) # Load the igraph package
+rm(list = ls()) # Remove all the objects we created so far.
+
+g1 <- graph( edges=edges, directed=F) 
+
+plot(g1)
+
 
