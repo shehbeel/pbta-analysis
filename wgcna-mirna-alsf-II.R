@@ -7,6 +7,7 @@ library(tidyverse)
 #library(ggplot2)
 library(DESeq2)
 library(WGCNA)
+library(ggpubr)
 allowWGCNAThreads() # allow multi-threading (optional)
 
 ################################################################################
@@ -312,6 +313,14 @@ temp_module_df %>% ggplot(., aes(x=Cluster, y=name, fill=value)) +
 
 ################################################################################
 # Make boxplot of Module Eigengene expression by clusters
+
+# Create list of pairwise vectors to statistically compare clusters
+my_comparisons <- list(c("1","2"),
+                       c("3","2"),
+                       c("4","2")
+                       )
+
+# Make plot
 ggplot(
   module_df,
   aes(
@@ -325,8 +334,13 @@ ggplot(
   geom_boxplot(width = 0.2, outlier.shape = NA) +
   # A sina plot to show all of the individual data points
   ggforce::geom_sina(maxwidth = 0.3) +
+  # Add global p-value
+  stat_compare_means(label.y = 0.35) + # ME0=0.15, ME1=0.25, ME2=0.15, ME3=0.25
+  # Add pairwise comparisons p-values
+  stat_compare_means(comparisons = my_comparisons, method = 'wilcox.test') +
   theme_classic()
 
+################################################################################
 ## What genes are part of Module 3?
 # Add Modules to genes
 gene_module_key <- tibble::enframe(bwnet$colors, name = "gene", value = "module") %>%
@@ -432,8 +446,9 @@ make_module_heatmap <- function(module_name,
                                      # We don't want to cluster samples
                                      cluster_columns = FALSE,
                                      # We don't need to show sample or gene labels
-                                     show_row_names = FALSE,
-                                     show_column_names = FALSE
+                                     show_row_names = TRUE,
+                                     show_column_names = FALSE,
+                                     column_title = "ME3 Gene Expression"
   )
   
   # Return heatmap
@@ -450,39 +465,49 @@ mod_3_heatmap
 # Save this plot to PNG
 png(file.path("results", "PBTA_mirna_module_3_heatmap.png"))
 mod_3_heatmap
-dev.off()
+#dev.off()
 
 ## For comparison look at other modules
-mod_2_heatmap <- make_module_heatmap(module_name = "ME2")
+#mod_2_heatmap <- make_module_heatmap(module_name = "ME2")
 # Print out the plot
-mod_2_heatmap
+#mod_2_heatmap
+
+
 ################################################################################
-# WHAT GENES ARE PART OF MODULE 3
-gene_module_key %>% filter(module == "ME3")
+## FINDING DRIVER GENES
+chooseTopHubInEachModule(normalized_counts,
+                         colorh, 
+                         omitColors = "grey", 
+                         power = chosen_power, 
+                         type = "signed")
+
 
 ################################################################################
 ## EXAMINE EXPRESSION PROFILES
+
 # pick out a few modules of interest here
-modules_of_interest <- c("grey", "turquoise", "blue", "yellow", "brown")
+modules_of_interest <- c("ME0", "ME1", "ME2", "ME3")
 
 # Pull out list of genes in that module
-submod <- module_df %>%
-  subset(colors %in% modules_of_interest)
+submod <- gene_module_key %>%
+  subset(module %in% modules_of_interest)
 
-row.names(module_df) <- module_df$gene_id
+row.names(gene_module_key) <- gene_module_key$gene
 
-subexpr = norm_counts[submod$gene_id,]
+# Get normalized expression for those genes
+temp_normalized_counts <- t(normalized_counts)
+subexpr <- temp_normalized_counts[submod$gene,]
 
-submod_df = data.frame(subexpr) %>%
+submod_df <- data.frame(subexpr) %>%
   mutate(
-    gene_id = row.names(.)
+    gene = row.names(.)
   ) %>%
-  pivot_longer(-gene_id) %>%
+  pivot_longer(-gene) %>%
   mutate(
-    module = module_df[gene_id,]$colors
+    module = gene_module_key[gene,]$module
   )
 
-submod_df %>% ggplot(., aes(x=name, y=value, group=gene_id)) +
+submod_df %>% ggplot(., aes(x=name, y=value, group=gene)) +
   geom_line(aes(color = module),
             alpha = 0.2) +
   theme_bw() +
@@ -491,5 +516,6 @@ submod_df %>% ggplot(., aes(x=name, y=value, group=gene_id)) +
   ) +
   facet_grid(rows = vars(module)) +
   labs(x = "Sample_ID",
-       y = "normalized expression") #+
-#scale_color_manual(values=c("blue", "brown", "grey", "turquoise",  "yellow"))
+       y = "normalized expression") +
+  scale_color_manual(values=c("grey", "turquoise", "blue", "brown"))
+
